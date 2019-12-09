@@ -21,6 +21,7 @@ export interface ViewRendererProps<T> {
     onSizeChanged: (dim: Dimension, index: number) => void;
     data: any;
     index: number;
+    indexHeightUnchanged: (index: number) => void;
     itemAnimator: ItemAnimator;
     styleOverrides?: object;
     forceNonDeterministicRendering?: boolean;
@@ -28,12 +29,14 @@ export interface ViewRendererProps<T> {
     extendedState?: object;
     internalSnapshot?: object;
     layoutProvider?: BaseLayoutProvider;
+    isVisible?: boolean;
 }
 export default abstract class BaseViewRenderer<T> extends ComponentCompat<ViewRendererProps<T>, {}> {
     protected animatorStyleOverrides: object | undefined;
 
     public shouldComponentUpdate(newProps: ViewRendererProps<any>): boolean {
         const hasMoved = this.props.x !== newProps.x || this.props.y !== newProps.y;
+        const hasVisibilityChanged = this.props.isVisible !== newProps.isVisible;
 
         const hasSizeChanged = !newProps.forceNonDeterministicRendering &&
             (this.props.width !== newProps.width || this.props.height !== newProps.height) ||
@@ -45,7 +48,7 @@ export default abstract class BaseViewRenderer<T> extends ComponentCompat<ViewRe
         let shouldUpdate = hasSizeChanged || hasDataChanged || hasExtendedStateChanged || hasInternalSnapshotChanged;
         if (shouldUpdate) {
             newProps.itemAnimator.animateWillUpdate(this.props.x, this.props.y, newProps.x, newProps.y, this.getRef() as object, newProps.index);
-        } else if (hasMoved) {
+        } else if (hasMoved || hasVisibilityChanged) {
             shouldUpdate = !newProps.itemAnimator.animateShift(this.props.x, this.props.y, newProps.x, newProps.y, this.getRef() as object, newProps.index);
         }
         return shouldUpdate;

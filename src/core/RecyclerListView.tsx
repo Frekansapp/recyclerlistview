@@ -50,10 +50,10 @@ const IS_WEB = !Platform || Platform.OS === "web";
  */
 
 //#if [WEB]
-//import ScrollComponent from "../platform/web/scrollcomponent/ScrollComponent";
-//import ViewRenderer from "../platform/web/viewrenderer/ViewRenderer";
-//import { DefaultWebItemAnimator as DefaultItemAnimator } from "../platform/web/itemanimators/DefaultWebItemAnimator";
-//const IS_WEB = true;
+// import ScrollComponent from "../platform/web/scrollcomponent/ScrollComponent";
+// import ViewRenderer from "../platform/web/viewrenderer/ViewRenderer";
+// import { DefaultWebItemAnimator as DefaultItemAnimator } from "../platform/web/itemanimators/DefaultWebItemAnimator";
+// const IS_WEB = true;
 //#endif
 
 /***
@@ -99,6 +99,7 @@ export interface RecyclerListViewProps {
     useWindowScroll?: boolean;
     disableRecycling?: boolean;
     forceNonDeterministicRendering?: boolean;
+    tryRemoveNonDeterministicShift?: boolean;
     extendedState?: object;
     itemAnimator?: ItemAnimator;
     optimizeForInsertDeleteAnimations?: boolean;
@@ -146,12 +147,14 @@ export default class RecyclerListView<P extends RecyclerListViewProps, S extends
     };
     private _layout: Dimension = { height: 0, width: 0 };
     private _pendingScrollToOffset: Point | null = null;
-    private _tempDim: Dimension = { height: 0, width: 0 };
     private _initialOffset = 0;
     private _cachedLayouts?: Layout[];
     private _scrollComponent: BaseScrollComponent | null = null;
 
-    private _defaultItemAnimator: ItemAnimator = new DefaultItemAnimator();
+    private _defaultItemAnimator: ItemAnimator;
+    private _itemsVisibility: boolean;
+    private _heightUnchangedForIndex: Record<number, boolean> = {};
+    private _initialVisibleIndices: number[] = [];
 
     constructor(props: P, context?: any) {
         super(props, context);
@@ -160,6 +163,14 @@ export default class RecyclerListView<P extends RecyclerListViewProps, S extends
         }, (index) => {
             return this.props.dataProvider.getStableId(index);
         }, !props.disableRecycling);
+
+        if (this.props.tryRemoveNonDeterministicShift && this.props.forceNonDeterministicRendering && !this.props.itemAnimator) {
+            this._itemsVisibility = false;
+            this._defaultItemAnimator = new BaseItemAnimator();
+        } else {
+            this._itemsVisibility = true;
+            this._defaultItemAnimator = new DefaultItemAnimator();
+        }
 
         this.state = {
             internalSnapshot: {},
@@ -373,6 +384,16 @@ export default class RecyclerListView<P extends RecyclerListViewProps, S extends
         return this._virtualRenderer;
     }
 
+    /**
+     * Making items visible when there's even a single item with discrepancy in height from what was provided in LayoutProvider.
+     * OR when none of the visible items have a discrepancy in height.
+     * This approach assumes that the items will shift instantaneously, after which they will be made visible, which should work on most phones.
+     * In later revisions, a more robust approach will be used where items will be made visible only after we know that they have shifted.
+     */
+    private _makeItemsVisible = (): void => {
+        this._itemsVisibility = true;
+    }
+
     private _checkAndChangeLayouts(newProps: RecyclerListViewProps, forceFullRender?: boolean): void {
         this._params.isHorizontal = newProps.isHorizontal;
         this._params.itemCount = newProps.dataProvider.getSize();
@@ -536,6 +557,26 @@ export default class RecyclerListView<P extends RecyclerListViewProps, S extends
         return null;
     }
 
+    private _indexHeightUnchanged = (index: number): void => {
+        if (!this._itemsVisibility) {
+            this._heightUnchangedForIndex[index] = true;
+            this._checkVisibleIndicesUnchangedHeights();
+        }
+    }
+
+    private _checkVisibleIndicesUnchangedHeights = (): void => {
+        if (this._initialVisibleIndices.length === 0) {
+            const viewabilityTracker = this._virtualRenderer.getViewabilityTracker();
+            this._initialVisibleIndices = viewabilityTracker ? viewabilityTracker.getInitialVisibleIndices() : [];
+        }
+        if (this._initialVisibleIndices.every((index: number) => {
+            return this._heightUnchangedForIndex[index];
+        })) {
+            this._makeItemsVisible();
+            this._queueStateRefresh();
+        }
+    }
+
     private _onViewContainerSizeChange = (dim: Dimension, index: number): void => {
         //Cannot be null here
         const layoutManager: LayoutManager = this._virtualRenderer.getLayoutManager() as LayoutManager;
@@ -684,6 +725,11 @@ RecyclerListView.propTypes = {
     //Default is false, if enabled dimensions provided in layout provider will not be strictly enforced.
     //Rendered dimensions will be used to relayout items. Slower if enabled.
     forceNonDeterministicRendering: PropTypes.bool,
+
+    //To be used with forceNonDeterministicRendering to skip the initial shifting of items while recalculating the y offsets and relayouting.
+    //If enabled, will remove the default implementation of itemAnimator.
+    //Note - Will not work if itemAnimator prop is passed.
+    tryRemoveNonDeterministicShift: PropTypes.bool,
 
     //In some cases the data passed at row level may not contain all the info that the item depends upon, you can keep all other info
     //outside and pass it down via this prop. Changing this object will cause everything to re-render. Make sure you don't change

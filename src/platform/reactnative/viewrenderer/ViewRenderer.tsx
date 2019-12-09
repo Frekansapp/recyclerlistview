@@ -1,7 +1,7 @@
 import * as React from "react";
 import { LayoutChangeEvent, View, ViewProperties } from "react-native";
 import { Dimension } from "../../../core/dependencies/LayoutProvider";
-import BaseViewRenderer, { ViewRendererProps } from "../../../core/viewrenderer/BaseViewRenderer";
+import BaseViewRenderer from "../../../core/viewrenderer/BaseViewRenderer";
 
 /***
  * View renderer is responsible for creating a container of size provided by LayoutProvider and render content inside it.
@@ -23,6 +23,7 @@ export default class ViewRenderer extends BaseViewRenderer<any> {
                     top: this.props.y,
                     ...this.props.styleOverrides,
                     ...this.animatorStyleOverrides,
+                    opacity: this.props.isVisible ? overrideOpacity || 1 : 0,
                 }}>
                 {this.renderChild()}
             </View>
@@ -62,6 +63,8 @@ export default class ViewRenderer extends BaseViewRenderer<any> {
             if (this.props.onSizeChanged) {
                 this.props.onSizeChanged(this._dim, this.props.index);
             }
+        } else {
+            this.props.indexHeightUnchanged(this.props.index);
         }
     }
 }
